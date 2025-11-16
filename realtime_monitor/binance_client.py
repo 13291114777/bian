@@ -163,13 +163,13 @@ class BinanceFuturesClient:
                     await asyncio.sleep(random.uniform(0.3, 0.9))
                     continue
                 raise
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError) as e:
                 last_exc = e
-                # 连接/超时异常：短暂等待后重试，必要时轮换
+                # 连接/读取/超时异常：短暂等待后重试，必要时轮换
                 if allow_rotate and len(self._base_urls) > 1:
-                    await self._rotate_base("net-error")
+                    await self._rotate_base(f"net-error-{type(e).__name__}")
                 attempts += 1
-                await asyncio.sleep(random.uniform(0.3, 0.9))
+                await asyncio.sleep(random.uniform(0.5, 1.2))
                 continue
 
         # 仍失败：抛出最后一次异常或通用错误
