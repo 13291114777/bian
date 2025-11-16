@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual env
+.venv/
+venv/
+ENV/
+
+# Logs & artifacts
+logs/
+*.log
+*.gz
+*.csv
+*.jsonl
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Packages / archives
+*.zip
+*.tar
+*.tar.gz
+*.whl
+
+# Misc
+.cache/
+.idea/

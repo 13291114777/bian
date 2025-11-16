@@ -1,0 +1,2 @@
+ts,ts_iso,symbol,kind,direction,open_time,price,ema21,high,low,quote_volume,confirm_candles,message
+1763260320,2025-11-16T10:32:00+08:00,ESPORTSUSDT,tip,down,1763260320000,0.36152,0.3621541627030566,0.36868,0.36039,70700.00723,,[ESPORTSUSDT] 下穿后反弹本根涨破EMA21但收盘未站上EMA21 -> 提示

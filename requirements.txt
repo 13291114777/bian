@@ -1,0 +1,6 @@
+httpx>=0.27.2
+anyio>=4.4.0
+tzlocal>=5.2
+websockets
+colorama>=0.4.6
+tenacity>=9.0.0
