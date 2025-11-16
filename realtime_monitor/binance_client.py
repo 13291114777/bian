@@ -83,8 +83,12 @@ class BinanceFuturesClient:
             await self._client.aclose()
         except Exception:
             pass
+        prev = str(self._client.base_url)
         self._base_idx = (self._base_idx + 1) % len(self._base_urls)
-        self._client = self._build_client(self._base_urls[self._base_idx])
+        new = self._base_urls[self._base_idx]
+        # 记录轮换原因，便于排障
+        print(f"[binance] rotate base: {prev} -> {new} (reason={reason})")
+        self._client = self._build_client(new)
 
     async def aclose(self):
         await self._client.aclose()
@@ -94,7 +98,7 @@ class BinanceFuturesClient:
         注意：不使用 follow_redirects，以便识别到重定向到 www.binance.com 的风控场景。
         """
         attempts = 0
-        max_attempts = len(self._base_urls) * 2  # 每个端点最多尝试2次
+        max_attempts = len(self._base_urls) * 3  # 每个端点最多尝试3次，提升韧性
         last_exc: Optional[Exception] = None
         while attempts < max_attempts:
             try:
@@ -108,21 +112,30 @@ class BinanceFuturesClient:
                         return r.json()
                     # 非 JSON 内容，视为风控，切换端点
                     if allow_rotate and len(self._base_urls) > 1:
+                        # 记录为最后异常，便于抛出更有信息量的错误
+                        try:
+                            preview = r.text[:160]
+                        except Exception:
+                            preview = "<no-body>"
+                        cur = str(self._client.base_url)
+                        last_exc = RuntimeError(
+                            f"Non-JSON 200 from {cur}{path} content-type={ctype} preview={preview!r}"
+                        )
                         await self._rotate_base("non-json-200")
                         attempts += 1
                         await asyncio.sleep(random.uniform(0.2, 0.6))
                         continue
                     r.raise_for_status()
-                elif sc in (302, 403, 418, 451):
+                elif sc in (301, 302, 307, 308, 403, 418, 451):
                     if allow_rotate and len(self._base_urls) > 1:
                         await self._rotate_base(f"status-{sc}")
                         attempts += 1
-                        await asyncio.sleep(random.uniform(0.3, 0.8))
+                        await asyncio.sleep(random.uniform(0.3, 0.9))
                         continue
                     r.raise_for_status()
                 elif sc == 429:
                     # 限流，稍作等待；优先本端点重试，随后再考虑轮换
-                    await asyncio.sleep(random.uniform(0.5, 1.2))
+                    await asyncio.sleep(random.uniform(0.8, 1.6))
                     attempts += 1
                     continue
                 else:
@@ -132,7 +145,7 @@ class BinanceFuturesClient:
                 if allow_rotate and len(self._base_urls) > 1:
                     await self._rotate_base("HTTPStatusError")
                     attempts += 1
-                    await asyncio.sleep(random.uniform(0.3, 0.8))
+                    await asyncio.sleep(random.uniform(0.3, 0.9))
                     continue
                 raise
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
@@ -141,13 +154,14 @@ class BinanceFuturesClient:
                 if allow_rotate and len(self._base_urls) > 1:
                     await self._rotate_base("net-error")
                 attempts += 1
-                await asyncio.sleep(random.uniform(0.2, 0.7))
+                await asyncio.sleep(random.uniform(0.3, 0.9))
                 continue
 
         # 仍失败：抛出最后一次异常或通用错误
         if last_exc:
             raise last_exc
-        raise RuntimeError("Failed to fetch JSON from Binance after rotating endpoints.")
+        cur = str(self._client.base_url)
+        raise RuntimeError(f"Failed to fetch JSON from Binance after rotating endpoints. last_base={cur} path={path}")
 
     @retry(wait=wait_random_exponential(multiplier=0.5, max=5), stop=stop_after_attempt(3))
     async def exchange_info(self) -> Dict[str, Any]:
