@@ -8,9 +8,10 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 import random
 
-BASE_URL = os.getenv("BINANCE_BASE_URL", "https://fapi.binance.com")
+# 仅在显式设置环境变量时使用，否则为 None
+BASE_URL = os.getenv("BINANCE_BASE_URL")
 
-# 备用端点轮换列表（优先使用显式配置的 BASE_URL）
+# 备用端点轮换列表（仅在显式配置 BASE_URL 时启用完整轮换）
 DEFAULT_BASE_URLS: List[str] = [
     "https://fapi.binance.com",
     "https://fapi2.binance.com",
