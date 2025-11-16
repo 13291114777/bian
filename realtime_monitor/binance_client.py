@@ -57,13 +57,18 @@ class BinanceFuturesClient:
             os.environ["HTTP_PROXY"] = self._proxy_url
             os.environ["ALL_PROXY"] = self._proxy_url
 
-        # 端点轮换：若指定了 BINANCE_BASE_URL，则将其置于列表首位
+        # 端点轮换：若指定了 BINANCE_BASE_URL，则将其置于列表首位；
+        # 否则仅用 fapi 主端点，避免轮换到可能被 429 的备用端点
         self._base_urls: List[str] = []
         if BASE_URL:
             self._base_urls.append(BASE_URL)
-        for u in DEFAULT_BASE_URLS:
-            if u not in self._base_urls:
-                self._base_urls.append(u)
+            # 若显式配置了端点，也加入其他备用以便轮换
+            for u in DEFAULT_BASE_URLS:
+                if u not in self._base_urls:
+                    self._base_urls.append(u)
+        else:
+            # 未配置时，仅用主端点 fapi，备用暂不加入（避免频繁 429）
+            self._base_urls.append("https://fapi.binance.com")
         self._base_idx = 0
 
         self._client = self._build_client(self._base_urls[self._base_idx])
@@ -126,17 +131,27 @@ class BinanceFuturesClient:
                         await asyncio.sleep(random.uniform(0.2, 0.6))
                         continue
                     r.raise_for_status()
-                elif sc in (301, 302, 307, 308, 403, 418, 451):
+                elif sc in (301, 302, 307, 308, 403, 451):
                     if allow_rotate and len(self._base_urls) > 1:
                         await self._rotate_base(f"status-{sc}")
                         attempts += 1
                         await asyncio.sleep(random.uniform(0.3, 0.9))
                         continue
                     r.raise_for_status()
-                elif sc == 429:
-                    # 限流，稍作等待；优先本端点重试，随后再考虑轮换
-                    await asyncio.sleep(random.uniform(0.8, 1.6))
+                elif sc == 418:
+                    # 418: "I'm a teapot"通常是 WAF 轻量限流，优先本端点重试并退避
+                    # 若反复 418 再考虑轮换，避免把正常端点标记为不可用
+                    await asyncio.sleep(random.uniform(1.5, 3.0))
                     attempts += 1
+                    if attempts % 3 == 0 and allow_rotate and len(self._base_urls) > 1:
+                        await self._rotate_base(f"status-418-after-retry")
+                    continue
+                elif sc == 429:
+                    # 限流，退避更长时间；若当前端点多次 429，考虑轮换
+                    await asyncio.sleep(random.uniform(2.0, 4.0))
+                    attempts += 1
+                    if attempts % 2 == 0 and allow_rotate and len(self._base_urls) > 1:
+                        await self._rotate_base(f"status-429-after-retry")
                     continue
                 else:
                     r.raise_for_status()
