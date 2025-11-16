@@ -48,9 +48,14 @@ class BinanceFuturesClient:
             except Exception:
                 self._http2_enabled = False
 
-        # 代理支持：优先读取 PROXY_URL，其次允许使用系统环境代理（trust_env=True）
+        # 代理支持：优先读取 PROXY_URL；httpx>=0.28 移除了 proxies 参数，
+        # 因此这里将 PROXY_URL 映射到标准环境变量并依赖 trust_env=True。
         self._proxy_url = os.getenv("PROXY_URL")
-        self._proxies = self._proxy_url if self._proxy_url else None
+        if self._proxy_url:
+            # 覆盖三类常用代理环境变量，确保 https 请求走代理
+            os.environ["HTTPS_PROXY"] = self._proxy_url
+            os.environ["HTTP_PROXY"] = self._proxy_url
+            os.environ["ALL_PROXY"] = self._proxy_url
 
         # 端点轮换：若指定了 BINANCE_BASE_URL，则将其置于列表首位
         self._base_urls: List[str] = []
@@ -70,7 +75,6 @@ class BinanceFuturesClient:
             limits=self._limits,
             headers=self._headers,
             http2=self._http2_enabled,
-            proxies=self._proxies,
             trust_env=True,  # 允许使用 HTTP(S)_PROXY 等系统代理
         )
 
